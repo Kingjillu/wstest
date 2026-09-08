@@ -1,3 +1,1 @@
-192.168.1.100:8080:abc.....ua:pass123
-192.168.1.101:8080:abc.....pe:pass456
-192.168.1.102:8080:abc.....us:pass789
+150.109.18.221:4950:gateproxyaug24mq0p9h-zone-abc-region-RU:GPBOTtfM
