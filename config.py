@@ -6,14 +6,12 @@ WA_REGISTER_URL = "https://api.whatsapp.com/v2/register"
 WA_CHECK_CODE_URL = "https://api.whatsapp.com/v2/check-code"
 
 # Cooldown settings (in seconds)
-# WhatsApp often gives codes that expire or are blocked if requested too frequently.
 COOLDOWN_MINUTES = 1  
 # Specific error states from your description
-ERROR_STATE_UNAVAILABLE = "unavailable_red"       # WhatsApp unavailable (red)
-ERROR_STATE_RECENTLY_CONNECTED = "recently_connected" # You were recently connected
+ERROR_STATE_UNAVAILABLE = "unavailable_red"       
+ERROR_STATE_RECENTLY_CONNECTED = "recently_connected" 
 
 # Proxy format expected in proxy.txt: ip:port:username:password
-# Country codes embedded in username: abc.....ua, abc.....pe, etc.
 PROXY_FILE_PATH = os.path.join(os.path.dirname(__file__), "proxy.txt")
 
 # Local state file to track last successful request to prevent API spam
