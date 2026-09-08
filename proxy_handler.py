@@ -14,7 +14,7 @@ def get_proxy_list():
 
                 # Format: ip:port:username:password
                 parts = line.split(':')
-                if len(parts) &gt;= 4:
+                if len(parts) >= 4:
                     ip, port, username, password = parts[0], parts[1], parts[2], parts[3]
 
                     # Extract country code from username (e.g., abc.....ua -> ua)
