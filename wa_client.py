@@ -36,7 +36,7 @@ class WhatsAppClient:
     def _is_cooldown_active(self):
         """Check if we are in the cooldown period."""
         elapsed = time.time() - self.last_request_time
-        if elapsed &lt; (COOLDOWN_MINUTES * 60):
+        if elapsed < (COOLDOWN_MINUTES * 60):
             return True
         return False
 
@@ -113,7 +113,7 @@ class WhatsAppClient:
 
                 else:
                     print(f"HTTP Error: {response.status_code} for {phone_number}")
-                    if attempt &lt; max_retries - 1:
+                    if attempt < max_retries - 1:
                         continue # Retry
                     return False
 
