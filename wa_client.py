@@ -1,6 +1,7 @@
 import requests
 import time
 import json
+import os # <-- Added missing import
 from config import WA_VERIFY_URL, STATE_FILE, COOLDOWN_MINUTES
 from proxy_handler import get_proxy_list, get_best_proxy, get_phone_country_code
 
@@ -13,15 +14,21 @@ class WhatsAppClient:
         """Load last request timestamp from local state file."""
         if not os.path.exists(STATE_FILE):
             return 0
-        with open(STATE_FILE, 'r') as f:
-            data = json.load(f)
-            return data.get('last_request', 0)
+        try:
+            with open(STATE_FILE, 'r') as f:
+                data = json.load(f)
+                return data.get('last_request', 0)
+        except (json.JSONDecodeError, IOError):
+            return 0
 
     def _save_state(self):
         """Save current timestamp to local state file."""
         data = {'last_request': time.time()}
-        with open(STATE_FILE, 'w') as f:
-            json.dump(data, f)
+        try:
+            with open(STATE_FILE, 'w') as f:
+                json.dump(data, f)
+        except IOError:
+            pass # Ignore if we can't write
 
     def _is_cooldown_active(self):
         """Check if we are in the cooldown period."""
@@ -44,7 +51,8 @@ class WhatsAppClient:
         Returns True if successful, False otherwise.
         """
         if self._is_cooldown_active():
-            print(f"Cooldown active. Please wait. Last request was {(COOLDOWN_MINUTES * 60) - (time.time() - self.last_request_time):.0f} seconds ago.")
+            remaining = (COOLDOWN_MINUTES * 60) - (time.time() - self.last_request_time)
+            print(f"Cooldown active. Please wait. Last request was {remaining:.0f} seconds ago.")
             return False
 
         proxy = self._get_proxy_for_number(phone_number)
@@ -81,11 +89,13 @@ class WhatsAppClient:
                 else:
                     # Check for specific errors
                     state = res_json.get('state', '')
-                    if 'unavailable' in state.lower() or 'red' in str(res_json):
+                    status_code = res_json.get('status', 200)
+
+                    if 'unavailable' in str(state).lower() or 'red' in str(res_json).lower():
                         print(f"WhatsApp Unavailable (Red) for {phone_number}. Try again later.")
                         return False
-                    elif 'recently connected' in str(res_json).lower():
-                        print(f"Recently connected for {phone_number}. Retrying soon.")
+                    elif 'recently connected' in str(res_json).lower() or status_code == 429:
+                        print(f"Recently connected / Too many requests for {phone_number}. Retrying soon.")
                         self.last_request_time = time.time() - 30 # Slightly earlier cooldown
                         return False
                     return True
@@ -133,6 +143,5 @@ class WhatsAppClient:
 
         # In a full automation, this would read from a specific file or API endpoint
         # For now, we return a placeholder or allow user input if needed.
-        # Let's assume the script continues processing for the next account.
         print("Account transfer confirmed. Proceeding to next account creation...")
         return True
