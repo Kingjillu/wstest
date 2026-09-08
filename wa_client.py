@@ -6,19 +6,22 @@ import os
 from config import WA_VERIFY_URL, STATE_FILE, COOLDOWN_MINUTES
 from proxy_handler import get_proxy_list, get_best_proxy, get_phone_country_code
 
-# Create a specific SSL context to handle HTTPS proxies more reliably
-ssl_context = ssl.create_default_context()
-ssl_context.check_hostname = False
-ssl_context.verify_mode = ssl.CERT_NONE
-
 class WhatsAppClient:
     def __init__(self):
         self.proxies = get_proxy_list()
         self.last_request_time = self._load_state()
-        # Use the custom SSL context
+
+        # Create a session with a specific adapter to handle SSL/HTTP properly
         self.session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(max_retries=3)
-        self.session.mount('https://', adapter)
+
+        # Create SSL context to be more lenient (good for Termux/Proxy combos)
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+
+        # Mount the adapter with this SSL context
+        from requests.adapters import HTTPAdapter
+        self.session.mount('https://', HTTPAdapter(max_retries=3, pool_connections=10, pool_maxsize=10))
 
     def _load_state(self):
         """Load last request timestamp from local state file."""
@@ -49,8 +52,9 @@ class WhatsAppClient:
 
     def _get_proxy_for_number(self, phone_number):
         proxy_dict = get_best_proxy(self.proxies, phone_number)
-        # Return requests-style proxies format
-        # Ensure protocol is explicitly included
+
+        # Ensure the proxy URL is correctly formatted for requests
+        # Format: http://username:password@ip:port
         base_url = proxy_dict['url']
         if not base_url.startswith('http'):
             base_url = 'http://' + base_url
@@ -62,7 +66,7 @@ class WhatsAppClient:
 
     def send_code(self, phone_number, country_name="US"):
         """
-        Sends the OTP request to WhatsApp with SSL retry logic.
+        Sends the OTP request to WhatsApp with robust error handling.
         """
         if self._is_cooldown_active():
             remaining = (COOLDOWN_MINUTES * 60) - (time.time() - self.last_request_time)
@@ -86,18 +90,18 @@ class WhatsAppClient:
             "X-WA-Client-Id": f"1.{int(time.time())}.67890"
         }
 
-        # Retry logic for SSL errors
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                # Note: verify=False disables strict SSL cert verification 
+                # which helps with some proxy issues, while using default session handling.
                 response = self.session.post(
                     WA_VERIFY_URL, 
                     data=payload, 
                     headers=headers, 
                     proxies=proxy, 
-                    timeout=15, 
-                    verify=False, # Disable strict cert verification if needed
-                    ssl=ssl_context
+                    timeout=15,
+                    verify=False 
                 )
 
                 if response.status_code == 200:
@@ -128,7 +132,7 @@ class WhatsAppClient:
 
             except requests.exceptions.SSLError as e:
                 print(f"SSL Error (Attempt {attempt+1}/{max_retries}): {e}")
-                time.sleep(1) # Wait before retrying SSL errors specifically
+                time.sleep(1) 
                 if attempt == max_retries - 1:
                     return False
 
@@ -140,6 +144,8 @@ class WhatsAppClient:
 
             except Exception as e:
                 print(f"Unexpected Exception: {e}")
+                # Clear cooldown slightly on unexpected errors to allow retry
+                self.last_request_time = time.time() - 50 
                 return False
 
         return True
