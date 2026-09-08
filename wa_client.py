@@ -1,17 +1,24 @@
 import requests
+import ssl
 import time
 import json
 import os
 from config import WA_VERIFY_URL, STATE_FILE, COOLDOWN_MINUTES
 from proxy_handler import get_proxy_list, get_best_proxy, get_phone_country_code
 
-# Global session to maintain connections and avoid constant SSL handshakes
-session = requests.Session()
+# Create a specific SSL context to handle HTTPS proxies more reliably
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
 
 class WhatsAppClient:
     def __init__(self):
         self.proxies = get_proxy_list()
         self.last_request_time = self._load_state()
+        # Use the custom SSL context
+        self.session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(max_retries=3)
+        self.session.mount('https://', adapter)
 
     def _load_state(self):
         """Load last request timestamp from local state file."""
@@ -83,12 +90,14 @@ class WhatsAppClient:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                response = session.post(
+                response = self.session.post(
                     WA_VERIFY_URL, 
                     data=payload, 
                     headers=headers, 
                     proxies=proxy, 
-                    timeout=15 # Increased timeout
+                    timeout=15, 
+                    verify=False, # Disable strict cert verification if needed
+                    ssl=ssl_context
                 )
 
                 if response.status_code == 200:
@@ -147,7 +156,7 @@ class WhatsAppClient:
         }
 
         try:
-            response = session.post(WA_VERIFY_URL, data=payload, proxies=proxy, timeout=15)
+            response = self.session.post(WA_VERIFY_URL, data=payload, proxies=proxy, timeout=15)
             if response.status_code == 200:
                 res_json = response.json()
                 if res_json.get('status') == 200 or res_json.get('code'):
