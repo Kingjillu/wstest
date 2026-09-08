@@ -1,1 +1,1 @@
-150.109.18.221:4950:gateproxyaug24mq0p9h-zone-abc-region-RU:GPBOTtfM
+gw.dataimpulse.com:824:fa559e65b9380ede8a4a_cr.ru:f7e7c3589acc80e4
