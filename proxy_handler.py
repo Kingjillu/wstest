@@ -46,7 +46,7 @@ def get_phone_country_code(phone_number):
     """
     Extracts the country code from a phone number string.
     Handles formats like +11234567890 or 11234567890
-    Returns the numeric part of the country code (e.g., 1 for US, 7 for Russia).
+    Returns the ISO 2-letter code for proxy matching.
     """
     if not phone_number:
         return None
@@ -55,7 +55,7 @@ def get_phone_country_code(phone_number):
     clean_num = phone_number.lstrip('+')
 
     # Mapping common codes to ISO 2-letter codes for proxy matching
-    # This is a simplified mapping. You can expand it.
+    # This is a simplified mapping. You can expand it as needed.
     code_map = {
         '1': 'us',   # USA/Canada
         '7': 'ru',   # Russia/Kazakhstan
@@ -73,7 +73,6 @@ def get_phone_country_code(phone_number):
         '48': 'pl',  # Poland
         '49': 'de',  # Germany
         '52': 'mx',  # Mexico
-        '53': 'cu',  # Cuba
         '54': 'ar',  # Argentina
         '55': 'br',  # Brazil
         '60': 'my',  # Malaysia
@@ -93,20 +92,17 @@ def get_phone_country_code(phone_number):
         '93': 'af',  # Afghanistan
         '94': 'lk',  # Sri Lanka
         '98': 'ir',  # Iran
-        'ua': 'ua',  # Ukraine (special case for abcproxy format if needed)
+        'ua': 'ua',  # Ukraine
         'pe': 'pe',  # Peru
     }
 
-    # Check for multi-digit codes (2 or 3 digits)
-    for code, iso_code in code_map.items():
+    # Check for multi-digit codes (2 or 3 digits) first to avoid conflicts
+    # e.g., if country is 62, we don't want it to match just '6' if a single-digit map existed
+    for code in sorted(code_map.keys(), key=lambda x: len(x), reverse=True):
         if str(code).isdigit() and clean_num.startswith(str(code)):
-            return iso_code
+            return code_map[str(code)]
 
-    # If single digit doesn't match multi-digit keys, check again
-    first_char = clean_num[0]
-    if first_char in code_map:
-        return code_map[first_char]
-
+    # Fallback
     return "us"
 
 def get_best_proxy(proxies, phone_number):
