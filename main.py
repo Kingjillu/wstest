@@ -27,10 +27,10 @@ def main():
 
         # Determine country code for proxy alignment
         phone_country_code = get_phone_country_code(phone_input)
-        print(f"Detected Country Code: {phone_country_code}. Selecting appropriate proxy...")
+        print(f"[INFO] Detected Country Code: {phone_country_code}. Selecting appropriate proxy...")
 
         # 2. Request OTP
-        print("Requesting OTP...")
+        print("[INFO] Requesting OTP via SMS...")
         code_sent = client.send_code(phone_input, phone_country_code)
 
         if not code_sent:
@@ -45,17 +45,17 @@ def main():
         otp_input = input("Enter the OTP code received on your virtual number panel: ").strip()
 
         # 4. Verify OTP
-        print(f"Verifying code {otp_input}...")
+        print(f"[INFO] Verifying code '{otp_input}'...")
         is_verified = client.verify_code(phone_input, otp_input)
 
         if is_verified:
-            print("\nWhatsApp Account Created Successfully in Work Profile!")
+            print("\n[SUCCESS] WhatsApp Account Created Successfully in Work Profile!")
 
             # 5. Handle Account Transfer
             transfer_done = client.get_account_transfer_code()
 
             if transfer_done:
-                print("Account transfer complete. Adding to phone apps.")
+                print("[SUCCESS] Account transfer complete. Adding to phone apps.")
 
         else:
             print("Code verification failed. Please try again.")
@@ -63,7 +63,7 @@ def main():
         # Ask if user wants to create another account
         another = input("\nCreate another unlimited account? (y/n): ").lower()
         if another != 'y':
-            print("Exiting system.")
+            print("[INFO] Exiting system.")
             break
 
 if __name__ == "__main__":
