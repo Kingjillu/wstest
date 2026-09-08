@@ -1,27 +1,21 @@
 import requests
-import ssl
 import time
 import json
 import os
+import urllib3
 from config import WA_VERIFY_URL, STATE_FILE, COOLDOWN_MINUTES
 from proxy_handler import get_proxy_list, get_best_proxy, get_phone_country_code
+
+# Disable warnings for cleaner logs in Termux
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class WhatsAppClient:
     def __init__(self):
         self.proxies = get_proxy_list()
         self.last_request_time = self._load_state()
 
-        # Create a session with a specific adapter to handle SSL/HTTP properly
+        # Use a session but allow it to close connections if needed
         self.session = requests.Session()
-
-        # Create SSL context to be more lenient (good for Termux/Proxy combos)
-        ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
-
-        # Mount the adapter with this SSL context
-        from requests.adapters import HTTPAdapter
-        self.session.mount('https://', HTTPAdapter(max_retries=3, pool_connections=10, pool_maxsize=10))
 
     def _load_state(self):
         """Load last request timestamp from local state file."""
@@ -54,7 +48,6 @@ class WhatsAppClient:
         proxy_dict = get_best_proxy(self.proxies, phone_number)
 
         # Ensure the proxy URL is correctly formatted for requests
-        # Format: http://username:password@ip:port
         base_url = proxy_dict['url']
         if not base_url.startswith('http'):
             base_url = 'http://' + base_url
@@ -66,19 +59,22 @@ class WhatsAppClient:
 
     def send_code(self, phone_number, country_name="US"):
         """
-        Sends the OTP request to WhatsApp with robust error handling.
+        Sends the OTP request to WhatsApp via SMS.
+        Returns True if successful, False otherwise.
         """
         if self._is_cooldown_active():
             remaining = (COOLDOWN_MINUTES * 60) - (time.time() - self.last_request_time)
-            print(f"Cooldown active. Please wait. Last request was {remaining:.0f} seconds ago.")
+            print(f"[INFO] Cooldown active. Please wait. Last request was {remaining:.0f} seconds ago.")
             return False
 
         proxy = self._get_proxy_for_number(phone_number)
         clean_num = phone_number.lstrip('+')
 
+        # Payload for WhatsApp Checkcode API
+        # method='sms' ensures we get an SMS, not a voice call
         payload = {
             "id": clean_num,
-            "method": "sms",
+            "method": "sms",  # <--- Explicitly SMS
             "code": "",
             "cc": country_name,
             "lang": "en",
@@ -86,64 +82,80 @@ class WhatsAppClient:
         }
 
         headers = {
-            "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
-            "X-WA-Client-Id": f"1.{int(time.time())}.67890"
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "WhatsApp/2.23.15 Android/11 (Google Pixel 6)" # Realistic UA
         }
 
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                # Note: verify=False disables strict SSL cert verification 
-                # which helps with some proxy issues, while using default session handling.
+                print(f"[INFO] Attempt {attempt + 1}/{max_retries}: Sending SMS to {phone_number} via proxy {proxy['https']}")
+
+                # Use verify=False to bypass SSL cert issues in Termux/Proxy
+                # timeout is critical to prevent hanging
                 response = self.session.post(
                     WA_VERIFY_URL, 
                     data=payload, 
                     headers=headers, 
                     proxies=proxy, 
-                    timeout=15,
-                    verify=False 
+                    timeout=10, # Reduced timeout for quicker failure detection
+                    verify=False
                 )
 
                 if response.status_code == 200:
                     res_json = response.json()
 
+                    # WhatsApp API usually returns {'code': '123456', 'status': 200} or similar
                     if res_json.get('code') or res_json.get('status') == 200:
-                        print(f"Code requested successfully for {phone_number}. Country Code: {country_name}")
+                        print(f"[SUCCESS] Code requested successfully for {phone_number}. Country Code: {country_name}")
                         self.last_request_time = time.time()
                         self._save_state()
+
+                        # Show the code if WhatsApp returns it immediately (some proxies/api do)
+                        returned_code = res_json.get('code', 'Sent')
+                        print(f"[INFO] Status: {res_json.get('status')} - Code: {returned_code}")
                         return True
                     else:
                         state = res_json.get('state', '')
+                        status = res_json.get('status')
+
                         if 'unavailable' in str(state).lower() or 'red' in str(res_json).lower():
-                            print(f"WhatsApp Unavailable (Red) for {phone_number}. Try again later.")
+                            print(f"[ERROR] WhatsApp Unavailable (Red) for {phone_number}. Try again later.")
                             return False
-                        elif 'recently connected' in str(res_json).lower() or res_json.get('status') == 429:
-                            print(f"Recently connected / Too many requests for {phone_number}. Retrying soon.")
+                        elif 'recently connected' in str(res_json).lower() or status == 429:
+                            print(f"[INFO] Recently connected / Too many requests for {phone_number}. Retrying soon.")
                             self.last_request_time = time.time() - 30 
                             return False
-                        # Other errors
-                        return True
+                        else:
+                            print(f"[WARN] Unknown state for {phone_number}: {res_json}")
+                            return True
 
                 else:
-                    print(f"HTTP Error: {response.status_code} for {phone_number}")
+                    print(f"[ERROR] HTTP Error: {response.status_code} for {phone_number}. Response: {response.text[:100]}")
                     if attempt < max_retries - 1:
                         continue # Retry
                     return False
 
             except requests.exceptions.SSLError as e:
-                print(f"SSL Error (Attempt {attempt+1}/{max_retries}): {e}")
+                print(f"[SSL] SSL Error (Attempt {attempt+1}/{max_retries}): {e}")
                 time.sleep(1) 
                 if attempt == max_retries - 1:
                     return False
 
+            except requests.exceptions.Timeout as e:
+                print(f"[TIMEOUT] Read timed out (Attempt {attempt+1}/{max_retries}): {e}")
+                time.sleep(1)
+                if attempt == max_retries - 1:
+                    return False
+
             except requests.exceptions.ConnectionError as e:
-                print(f"Connection Error (Attempt {attempt+1}/{max_retries}): {e}")
+                print(f"[CONN] Connection Error (Attempt {attempt+1}/{max_retries}): {e}")
                 time.sleep(1)
                 if attempt == max_retries - 1:
                     return False
 
             except Exception as e:
-                print(f"Unexpected Exception: {e}")
+                print(f"[EXC] Unexpected Exception: {e}")
                 # Clear cooldown slightly on unexpected errors to allow retry
                 self.last_request_time = time.time() - 50 
                 return False
@@ -152,26 +164,28 @@ class WhatsAppClient:
 
     def verify_code(self, phone_number, code):
         """Verifies the OTP code."""
+        print(f"[INFO] Verifying code {code} for {phone_number}...")
+
         proxy = self._get_proxy_for_number(phone_number)
         clean_num = phone_number.lstrip('+')
 
         payload = {
             "id": clean_num,
-            "code": code,
+            "code": str(code), # Ensure code is string
             "method": "sms"
         }
 
         try:
-            response = self.session.post(WA_VERIFY_URL, data=payload, proxies=proxy, timeout=15)
+            response = self.session.post(WA_VERIFY_URL, data=payload, proxies=proxy, timeout=10)
             if response.status_code == 200:
                 res_json = response.json()
                 if res_json.get('status') == 200 or res_json.get('code'):
-                    print(f"Code {code} verified successfully for {phone_number}.")
+                    print(f"[SUCCESS] Code {code} verified successfully for {phone_number}.")
                     return True
-            print(f"Code verification failed for {phone_number}. Status: {response.status_code}")
+            print(f"[ERROR] Code verification failed for {phone_number}. Status: {response.status_code}, Response: {response.text}")
             return False
         except Exception as e:
-            print(f"Exception verifying code: {e}")
+            print(f"[EXC] Exception verifying code: {e}")
             return False
 
     def get_account_transfer_code(self):
@@ -182,5 +196,5 @@ class WhatsAppClient:
         print("Please open WhatsApp on your phone.")
         input("Press Enter when you have received the account transfer code on your new device/app...")
 
-        print("Account transfer confirmed. Proceeding to next account creation...")
+        print("[SUCCESS] Account transfer confirmed. Proceeding to next account creation...")
         return True
