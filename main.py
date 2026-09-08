@@ -11,7 +11,7 @@ def main():
     # Initialize client
     client = WhatsAppClient()
 
-    # Load all proxies to display options if needed
+    # Load all proxies
     all_proxies = get_proxy_list()
     if not all_proxies:
         print("No proxies found in proxy.txt. Please check the file.")
