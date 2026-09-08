@@ -14,7 +14,7 @@ def get_proxy_list():
 
                 # Format: ip:port:username:password
                 parts = line.split(':')
-                if len(parts) >= 4:
+                if len(parts) &gt;= 4:
                     ip, port, username, password = parts[0], parts[1], parts[2], parts[3]
 
                     # Extract country code from username (e.g., abc.....ua -> ua)
@@ -26,6 +26,7 @@ def get_proxy_list():
                         "username": username,
                         "password": password,
                         "country": country_code,
+                        # Construct URL specifically for requests library compatibility
                         "url": f"http://{username}:{password}@{ip}:{port}"
                     })
     except FileNotFoundError:
@@ -35,7 +36,6 @@ def get_proxy_list():
 
 def get_country_from_username(username):
     """Extracts the last 2 characters of the username as country code."""
-    # Example: abc.....ua -> ua, abc.....pe -> pe
     # Handle edge case where username might have dots before country
     match = re.search(r'([a-zA-Z]{2})$', username)
     if match:
@@ -45,17 +45,14 @@ def get_country_from_username(username):
 def get_phone_country_code(phone_number):
     """
     Extracts the country code from a phone number string.
-    Handles formats like +11234567890 or 11234567890
     Returns the ISO 2-letter code for proxy matching.
     """
     if not phone_number:
         return None
 
-    # Remove leading +
     clean_num = phone_number.lstrip('+')
 
-    # Mapping common codes to ISO 2-letter codes for proxy matching
-    # This is a simplified mapping. You can expand it as needed.
+    # Mapping common codes to ISO 2-letter codes
     code_map = {
         '1': 'us',   # USA/Canada
         '7': 'ru',   # Russia/Kazakhstan
@@ -96,13 +93,11 @@ def get_phone_country_code(phone_number):
         'pe': 'pe',  # Peru
     }
 
-    # Check for multi-digit codes (2 or 3 digits) first to avoid conflicts
-    # e.g., if country is 62, we don't want it to match just '6' if a single-digit map existed
+    # Check for multi-digit codes first (longer matches preferred)
     for code in sorted(code_map.keys(), key=lambda x: len(x), reverse=True):
         if str(code).isdigit() and clean_num.startswith(str(code)):
             return code_map[str(code)]
 
-    # Fallback
     return "us"
 
 def get_best_proxy(proxies, phone_number):
